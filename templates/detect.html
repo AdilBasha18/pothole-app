@@ -8,7 +8,7 @@
         data-total-potholes="{% if stats %}{{ stats.total|default(0) }}{% else %}0{% endif %}"
         data-urgency="{% if stats %}{{ stats.urgency|default('None') }}{% else %}None{% endif %}"
         data-video-mode="{{ video_mode|default(false)|tojson }}"
-        data-result-file="{{ result_image if not video_mode else result_video }}"
+        data-result-file="{% if video_mode and result_video %}{{ result_video }}{% elif result_image %}{{ result_image }}{% endif %}"
         data-small="{% if stats %}{{ stats.small|default(0) }}{% else %}0{% endif %}"
         data-medium="{% if stats %}{{ stats.medium|default(0) }}{% else %}0{% endif %}"
         data-large="{% if stats %}{{ stats.large|default(0) }}{% else %}0{% endif %}"
