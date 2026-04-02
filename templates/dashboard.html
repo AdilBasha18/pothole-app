@@ -1,0 +1,279 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="page-gradient">
+    <div class="container" style="padding-top: 4rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; color: white;">
+            <h2>User Profile</h2>
+            <a href="{{ url_for('detect') }}" class="btn btn-primary" style="padding: 0.5rem 1rem;">
+                <i class='bx bx-plus'></i> New Scan
+            </a>
+        </div>
+
+        <div class="clay-card" style="margin-bottom: 2rem; display: flex; align-items: center; gap: 2rem; padding: 2.5rem;">
+            <div style="font-size: 4rem; color: var(--primary); display: flex; align-items: center; justify-content: center; width: 80px; height: 80px; border-radius: 50%; overflow: hidden; background: rgba(255,255,255,0.05);">
+                {% if session.get('user_picture') %}
+                <img src="{{ session.get('user_picture') }}" alt="Profile Picture" style="width: 100%; height: 100%; object-fit: cover;">
+                {% else %}
+                <i class='bx bxs-user-circle'></i>
+                {% endif %}
+            </div>
+            <div>
+                <h3 style="margin-bottom: 0.5rem; color: var(--text-light); font-size: 1.8rem;">{{ session.get('user_name', 'User') }}</h3>
+                <p style="color: var(--text-gray); font-size: 1.1rem;"><i class='bx bx-envelope'></i> {{ session.get('user_id') }}</p>
+            </div>
+            <div style="margin-left: auto; text-align: center; background: rgba(255,255,255,0.05); padding: 1.5rem 3rem; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1);">
+                <div style="font-size: 3rem; font-weight: 800; color: white; line-height: 1;">{{ total_reports }}</div>
+                <div style="font-size: 0.9rem; color: var(--text-gray); text-transform: uppercase; letter-spacing: 0.1em; margin-top: 0.5rem;">Total Reports</div>
+            </div>
+        </div>
+
+        <!-- Road Analytics Dashboard -->
+        <h3 style="color: white; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 0.5rem;">
+            <i class='bx bx-bar-chart-alt-2'></i> Road Analytics Dashboard
+        </h3>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem; margin-bottom: 3rem;">
+            <div class="clay-card" style="text-align: center; padding: 1.5rem;">
+                <div style="font-size: 0.8rem; color: var(--text-gray); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.5rem;">Total Potholes</div>
+                <div style="font-size: 2.2rem; font-weight: 800; color: white;">{{ stats_summary.total_potholes if stats_summary else 0 }}</div>
+            </div>
+            <div class="clay-card" style="text-align: center; padding: 1.5rem; border-bottom: 4px solid #16a34a;">
+                <div style="font-size: 0.8rem; color: var(--text-gray); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.5rem;">Small</div>
+                <div style="font-size: 2.2rem; font-weight: 800; color: #16a34a;">{{ stats_summary.small if stats_summary else 0 }}</div>
+            </div>
+            <div class="clay-card" style="text-align: center; padding: 1.5rem; border-bottom: 4px solid #d97706;">
+                <div style="font-size: 0.8rem; color: var(--text-gray); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.5rem;">Medium</div>
+                <div style="font-size: 2.2rem; font-weight: 800; color: #d97706;">{{ stats_summary.medium if stats_summary else 0 }}</div>
+            </div>
+            <div class="clay-card" style="text-align: center; padding: 1.5rem; border-bottom: 4px solid #dc2626;">
+                <div style="font-size: 0.8rem; color: var(--text-gray); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.5rem;">Large</div>
+                <div style="font-size: 2.2rem; font-weight: 800; color: #dc2626;">{{ stats_summary.large if stats_summary else 0 }}</div>
+            </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 2rem; margin-bottom: 4rem;">
+            <div class="clay-card" style="padding: 2rem;">
+                <h4 style="color: var(--text-light); margin-bottom: 1.5rem; display: flex; align-items: center; gap: 0.5rem;">
+                    <i class='bx bx-pie-chart-alt'></i> Size Distribution
+                </h4>
+                <div style="height: 300px; position: relative;">
+                    <canvas id="distributionChart"></canvas>
+                </div>
+            </div>
+            <div class="clay-card" style="padding: 2rem;">
+                <h4 style="color: var(--text-light); margin-bottom: 1.5rem; display: flex; align-items: center; gap: 0.5rem;">
+                    <i class='bx bx-line-chart'></i> Weekly Reporting Activity
+                </h4>
+                <div style="height: 300px; position: relative;">
+                    <canvas id="activityChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <h3 style="color: white; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 0.5rem;">
+            <i class='bx bx-history'></i> Submission History
+        </h3>
+
+        {% if reports %}
+        <div style="display: grid; gap: 1.5rem;">
+            {% for report in reports %}
+            <div class="clay-card" style="padding: 1.5rem 2rem; display: flex; justify-content: space-between; align-items: center;">
+                <div style="flex: 1;">
+                    <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 0.5rem;">
+                        <span style="background: rgba(99, 102, 241, 0.2); color: #818cf8; padding: 0.3rem 0.8rem; border-radius: 50px; font-size: 0.85rem; font-weight: 600;">
+                            <i class='bx bx-current-location'></i> {{ report.lat }}, {{ report.lng }}
+                        </span>
+                            <div style="font-size: 0.9rem; color: var(--text-dim); margin-top: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
+                                <i class='bx bx-time'></i> {{ report.timestamp }}
+                            </div>
+                            <!-- Repair Status Indicator -->
+                            <div style="margin-top: 1rem; display: flex; align-items: center; gap: 0.5rem;">
+                                <span style="font-size: 0.8rem; color: var(--text-gray); text-transform: uppercase; letter-spacing: 0.05em;">Status:</span>
+                                <span style="font-size: 0.85rem; font-weight: 600; padding: 0.3rem 0.8rem; border-radius: 20px; 
+                                    {% if report.status == 'Repaired' %} background: rgba(34, 197, 94, 0.1); color: #22c55e;
+                                    {% elif report.status == 'Repair Scheduled' %} background: rgba(249, 115, 22, 0.1); color: #f97316;
+                                    {% elif report.status == 'Under Inspection' %} background: rgba(234, 179, 8, 0.1); color: #eab308;
+                                    {% else %} background: rgba(239, 68, 68, 0.1); color: #ef4444; {% endif %}">
+                                    {{ report.status if report.status else 'Reported' }}
+                                </span>
+                            </div>
+                        </div>
+                    <div style="color: var(--text-light); font-size: 1.1rem; margin-bottom: 0.8rem;">
+                        Found <strong style="color: white;">{{ report.total_potholes }}</strong> potholes
+                    </div>
+                    <div style="background: rgba(255,255,255,0.05); padding: 1rem; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1); display: flex; align-items: flex-start; gap: 0.6rem;">
+                        <i class='bx bx-map-pin' style="margin-top: 0.2rem; color: var(--primary);"></i>
+                        <div>
+                            <div style="font-size: 0.7rem; color: var(--text-gray); text-transform: uppercase; margin-bottom: 2px;">Reported Address</div>
+                            <div style="color: white; font-size: 0.95rem; font-weight: 500; line-height: 1.4;">{{ report.address }}</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <a href="https://www.google.com/maps?q={{ report.lat }},{{ report.lng }}" target="_blank" title="Click to view on Google Maps" style="text-decoration: none;">
+                    <div style="width: 150px; height: 100px; border-radius: 12px; overflow: hidden; border: 1px solid rgba(255,255,255,0.1); margin: 0 1.5rem; cursor: pointer; position: relative;" 
+                         class="history-map" 
+                         data-lat="{{ report.lat }}" 
+                         data-lng="{{ report.lng }}">
+                         <div style="position: absolute; bottom: 5px; right: 5px; background: rgba(0,0,0,0.6); padding: 2px 5px; border-radius: 4px; font-size: 0.7rem; color: white; z-index: 1000;">
+                            <i class='bx bx-zoom-in'></i> View
+                         </div>
+                    </div>
+                </a>
+
+                <div style="text-align: right; min-width: 120px;">
+                    {% if report.urgency == 'High' %}
+                    <div style="background: rgba(239, 68, 68, 0.2); color: #ef4444; padding: 0.4rem 1.2rem; border-radius: 50px; font-weight: 700; font-size: 0.95rem; display: inline-block;">
+                        High Priority</div>
+                    {% elif report.urgency == 'Medium' %}
+                    <div style="background: rgba(234, 179, 8, 0.2); color: #eab308; padding: 0.4rem 1.2rem; border-radius: 50px; font-weight: 700; font-size: 0.95rem; display: inline-block;">
+                        Medium Priority</div>
+                    {% elif report.urgency == 'Low' %}
+                    <div style="background: rgba(34, 197, 94, 0.2); color: #22c55e; padding: 0.4rem 1.2rem; border-radius: 50px; font-weight: 700; font-size: 0.95rem; display: inline-block;">
+                        Low Priority</div>
+                    {% elif report.urgency == 'None' %}
+                    <div style="background: rgba(34, 197, 94, 0.2); color: #22c55e; padding: 0.4rem 1.2rem; border-radius: 50px; font-weight: 700; font-size: 0.95rem; display: inline-block;">
+                        No Repair Needed</div>
+                    {% else %}
+                    <div style="background: rgba(148, 163, 184, 0.2); color: #cbd5e1; padding: 0.4rem 1.2rem; border-radius: 50px; font-weight: 700; font-size: 0.95rem; display: inline-block;">
+                        No Action</div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        
+        <!-- LEAFLET CSS -->
+        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+        <!-- LEAFLET JS -->
+        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+        <!-- CHART.JS -->
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+        <script>
+            document.addEventListener("DOMContentLoaded", function () {
+                const mapContainers = document.querySelectorAll('.history-map');
+                
+                mapContainers.forEach((container, index) => {
+                    const lat = parseFloat(container.dataset.lat);
+                    const lng = parseFloat(container.dataset.lng);
+                    
+                    if (!isNaN(lat) && !isNaN(lng)) {
+                        // unique id for Leaflet
+                        const mapId = 'map-' + index;
+                        container.id = mapId;
+                        
+                        const map = L.map(mapId, {
+                            zoomControl: false,
+                            attributionControl: false,
+                            dragging: false,
+                            touchZoom: false,
+                            scrollWheelZoom: false,
+                            doubleClickZoom: false,
+                            boxZoom: false
+                        }).setView([lat, lng], 14);
+
+                        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                            maxZoom: 20
+                        }).addTo(map);
+
+                        L.marker([lat, lng]).addTo(map);
+                    }
+                });
+
+                // Charts Logic
+                const stats = {{ stats_summary|tojson if stats_summary else '{"total_potholes":0, "small":0, "medium":0, "large":0}' }};
+                
+                // Distribution Chart
+                const distCtx = document.getElementById('distributionChart').getContext('2d');
+                new Chart(distCtx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['Small', 'Medium', 'Large'],
+                        datasets: [{
+                            data: [stats.small, stats.medium, stats.large],
+                            backgroundColor: ['#16a34a', '#d97706', '#dc2626'],
+                            borderWidth: 0,
+                            hoverOffset: 10
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'bottom',
+                                labels: { color: '#94a3b8', padding: 20, font: { size: 12, weight: '600' } }
+                            }
+                        },
+                        cutout: '70%'
+                    }
+                });
+
+                // Weekly Activity Chart
+                const reports = [
+                    {% for report in reports %}
+                    { date: "{{ report.timestamp.split(' ')[0] if report.timestamp else '' }}" },
+                    {% endfor %}
+                ];
+
+                // Process last 7 days activity
+                const last7Days = [];
+                for (let i = 6; i >= 0; i--) {
+                    const d = new Date();
+                    d.setDate(d.getDate() - i);
+                    last7Days.push(d.toISOString().split('T')[0]);
+                }
+
+                const activityData = last7Days.map(day => {
+                    return reports.filter(r => r.date === day).length;
+                });
+
+                const activityCtx = document.getElementById('activityChart').getContext('2d');
+                new Chart(activityCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: last7Days.map(d => {
+                            const date = new Date(d);
+                            return date.toLocaleDateString('en-US', { weekday: 'short' });
+                        }),
+                        datasets: [{
+                            label: 'Reports',
+                            data: activityData,
+                            backgroundColor: '#6366f1',
+                            borderRadius: 8,
+                            barThickness: 20
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                grid: { color: 'rgba(255,255,255,0.05)' },
+                                ticks: { color: '#94a3b8', stepSize: 1 }
+                            },
+                            x: {
+                                grid: { display: false },
+                                ticks: { color: '#94a3b8' }
+                            }
+                        },
+                        plugins: {
+                            legend: { display: false }
+                        }
+                    }
+                });
+            });
+        </script>
+        {% else %}
+        <div class="clay-card" style="text-align: center; padding: 4rem 2rem;">
+            <i class='bx bx-folder-open' style="font-size: 4rem; color: var(--text-dim); margin-bottom: 1rem;"></i>
+            <h4 style="color: var(--text-light); margin-bottom: 0.5rem;">No Reports Yet</h4>
+            <p style="color: var(--text-gray);">You haven't submitted any pothole reports. Start a scan to report one.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
