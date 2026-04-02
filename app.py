@@ -98,7 +98,7 @@ def init_db():
 
 init_db()
 
-GOOGLE_CLIENT_ID = "809688799408-qqg2rnpsk1klevs12fu31nqhajse4c4j.apps.googleusercontent.com".strip()
+GOOGLE_CLIENT_ID = "858016731730-ms7hnq775deqcjp6b2r5680q0gehmrd3.apps.googleusercontent.com".strip()
 
 # Initialize YOLOv8 Model
 model = YOLO('best.pt')  # Ensure best.pt is in the same directory
