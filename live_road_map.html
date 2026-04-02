@@ -1,0 +1,175 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<!-- Leaflet CSS & JS -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+
+<div class="page-gradient" style="min-height: 100vh; padding-top: 80px;">
+    <div class="container" style="max-width: 1400px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; color: white;">
+            <div>
+                <h1 class="hero-title" style="font-size: 2.5rem; margin-bottom: 0.5rem;">Live Road Map</h1>
+                <p style="color: var(--text-gray);">Real-time visualization of all reported potholes</p>
+            </div>
+            <div style="display: flex; gap: 1rem; align-items: center;">
+                <div class="clay-card" style="padding: 0.5rem 1rem; display: flex; align-items: center; gap: 0.8rem;">
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <span style="width: 12px; height: 12px; border-radius: 50%; background: #ef4444;"></span>
+                        <span style="font-size: 0.8rem; color: #e2e8f0;">High</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <span style="width: 12px; height: 12px; border-radius: 50%; background: #eab308;"></span>
+                        <span style="font-size: 0.8rem; color: #e2e8f0;">Medium</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <span style="width: 12px; height: 12px; border-radius: 50%; background: #22c55e;"></span>
+                        <span style="font-size: 0.8rem; color: #e2e8f0;">Low</span>
+                    </div>
+                </div>
+                <button id="refresh-map" class="btn btn-white" style="padding: 0.6rem 1.2rem;">
+                    <i class='bx bx-refresh'></i> Refresh
+                </button>
+            </div>
+        </div>
+
+        <div class="clay-card" style="padding: 0; overflow: hidden; height: 75vh; border: 1px solid var(--glass-border); position: relative;">
+            <div id="live-map" style="width: 100%; height: 100%; z-index: 1;"></div>
+            
+            <!-- Map Stats Overlay -->
+            <div style="position: absolute; bottom: 20px; right: 20px; z-index: 1000; pointer-events: none;">
+                <div class="clay-card" style="padding: 1rem 1.5rem; backdrop-filter: blur(20px); pointer-events: auto;">
+                    <div style="text-align: right;">
+                        <div id="total-reports-count" style="font-size: 1.8rem; font-weight: 800; color: white;">0</div>
+                        <div style="font-size: 0.7rem; color: var(--text-gray); text-transform: uppercase;">Total Active Reports</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .leaflet-popup-content-wrapper {
+        background: rgba(15, 23, 42, 0.9) !important;
+        backdrop-filter: blur(10px);
+        color: white !important;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 12px;
+    }
+    .leaflet-popup-tip {
+        background: rgba(15, 23, 42, 0.9) !important;
+    }
+    .popup-content {
+        padding: 5px;
+    }
+    .popup-title {
+        font-weight: 700;
+        font-size: 1rem;
+        margin-bottom: 8px;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+    }
+    .popup-info {
+        font-size: 0.85rem;
+        margin-bottom: 5px;
+        color: #cbd5e1;
+    }
+    .priority-badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 0.7rem;
+        font-weight: 700;
+        text-transform: uppercase;
+    }
+</style>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        const map = L.map('live-map').setView([20.5937, 78.9629], 5); // Default center (India)
+        
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            maxZoom: 20,
+            attribution: '&copy; OpenStreetMap'
+        }).addTo(map);
+
+        let reportMarkers = [];
+
+        function getPriorityColor(urgency) {
+            if (urgency === 'High') return '#ef4444';
+            if (urgency === 'Medium') return '#eab308';
+            return '#22c55e';
+        }
+
+        async function fetchReports() {
+            try {
+                const response = await fetch('/api/all_reports');
+                const data = await response.json();
+                
+                // Clear existing markers
+                reportMarkers.forEach(m => map.removeLayer(m));
+                reportMarkers = [];
+
+                if (data.reports) {
+                    document.getElementById('total-reports-count').innerText = data.reports.length;
+                    
+                    data.reports.forEach(report => {
+                        const color = getPriorityColor(report.urgency);
+                        const marker = L.circleMarker([report.lat, report.lng], {
+                            radius: 10,
+                            fillColor: color,
+                            color: "#fff",
+                            weight: 2,
+                            opacity: 1,
+                            fillOpacity: 0.8
+                        }).addTo(map);
+
+                        const popupHtml = `
+                            <div class="popup-content">
+                                <div class="popup-title">
+                                    <i class='bx bxs-error-circle' style="color: ${color}"></i>
+                                    Pothole Alert
+                                </div>
+                                <div class="popup-info" style="margin-top: 5px;"><strong>Total Potholes:</strong> ${report.total_potholes}</div>
+                                <div class="popup-info"><strong>Priority:</strong> <span class="priority-badge" style="background: ${color}33; color: ${color}">${report.urgency}</span></div>
+                                <div class="popup-info" style="margin-top: 10px; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
+                                    <div style="font-size: 0.7rem; color: var(--text-gray); text-transform: uppercase; margin-bottom: 2px;">Address</div>
+                                    <div style="color: white; font-weight: 500; line-height: 1.4;">
+                                        <i class='bx bx-map-pin' style="color: var(--primary);"></i> ${report.address}
+                                    </div>
+                                </div>
+                                <div class="popup-info" style="margin-top: 10px;"><strong>Detected Via:</strong> ${report.detection_type}</div>
+                                <div class="popup-info"><strong>Timestamp:</strong> <span style="font-size: 0.75rem; opacity: 0.8;">${report.timestamp}</span></div>
+                                <div class="popup-info"><strong>Status:</strong> <span style="color: ${report.status === 'Repaired' ? '#22c55e' : '#818cf8'}">${report.status}</span></div>
+                            </div>
+                        `;
+
+                        marker.bindPopup(popupHtml);
+                        reportMarkers.push(marker);
+                    });
+
+                    if (reportMarkers.length > 0) {
+                        const group = new L.featureGroup(reportMarkers);
+                        // Only fit bounds on first load or if requested
+                        if (reportMarkers.length > 0 && map.getZoom() === 5) {
+                            map.fitBounds(group.getBounds().pad(0.1));
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error("Error fetching reports:", err);
+            }
+        }
+
+        // Initial fetch
+        fetchReports();
+
+        // Auto-refresh every 10 seconds
+        setInterval(fetchReports, 10000);
+
+        document.getElementById('refresh-map').addEventListener('click', fetchReports);
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,981 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="page-gradient">
+    <div id="detection-config" 
+        data-live-mode="{{ live_mode|default(false)|tojson }}"
+        data-detect-url="{{ url_for('detect_frame') }}"
+        data-total-potholes="{% if stats %}{{ stats.total|default(0) }}{% else %}0{% endif %}"
+        data-urgency="{% if stats %}{{ stats.urgency|default('None') }}{% else %}None{% endif %}"
+        data-video-mode="{{ video_mode|default(false)|tojson }}"
+        data-result-file="{{ result_image if not video_mode else result_video }}"
+        data-small="{% if stats %}{{ stats.small|default(0) }}{% else %}0{% endif %}"
+        data-medium="{% if stats %}{{ stats.medium|default(0) }}{% else %}0{% endif %}"
+        data-large="{% if stats %}{{ stats.large|default(0) }}{% else %}0{% endif %}"
+        data-accuracy="{% if stats %}{{ stats.avg_conf|default('0.00') }}{% else %}0.00{% endif %}"
+        style="display: none;"></div>
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay">
+        <div class="spinner-box">
+            <i class='bx bxs-car'></i>
+            <div class="road-line"></div>
+        </div>
+        <div class="loading-text">Processing Footage</div>
+        <div class="loading-subtext">This may take a moment based on video size...</div>
+    </div>
+
+    <div class="container">
+        <div
+            style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; color: white;">
+            <h2>Detection Dashboard</h2>
+            <a href="{{ url_for('index') }}" class="btn btn-white" style="padding: 0.5rem 1rem; font-size: 0.9rem;">
+                <i class='bx bx-arrow-back'></i> Back
+            </a>
+        </div>
+
+        {% if not uploaded_image and not uploaded_video %}
+        <!-- Analysis Mode Selection -->
+        <h3 style="text-align: center; color: white; margin-bottom: 2rem; opacity: 0.9;">Select Analysis Mode</h3>
+
+        <div class="dashboard-grid"
+            style="max-width: 1200px; margin: 0 auto; grid-template-columns: repeat(3, 1fr) !important;">
+            <!-- Image Upload -->
+            <div class="clay-card" style="text-align: center; transition: 0.3s;">
+                <form action="{{ url_for('detect') }}" method="POST" enctype="multipart/form-data"
+                    style="height: 100%;">
+                    <label for="file_image" class="upload-card"
+                        style="border-radius: 20px; border: none; box-shadow: none; height: 100%; min-height: 350px;">
+                        <div
+                            style="padding: 2.5rem; border-radius: 50%; margin-bottom: 2rem; color: var(--primary); background: rgba(99, 102, 241, 0.1);">
+                            <i class='bx bx-image' style="font-size: 5rem;"></i>
+                        </div>
+                        <h3 style="margin-bottom: 0.5rem; color: var(--text-light);">Upload Image</h3>
+                        <p style="color: var(--text-gray);">Analyze road photos <br>(JPG, PNG)</p>
+                        <input type="file" name="file" id="file_image" accept="image/*" style="display: none;">
+                        <div class="btn btn-primary" style="margin-top: 1.5rem;">Select Image</div>
+                    </label>
+                </form>
+            </div>
+
+            <!-- Video Upload -->
+            <div class="clay-card" style="text-align: center; transition: 0.3s;">
+                <form action="{{ url_for('detect') }}" method="POST" enctype="multipart/form-data"
+                    style="height: 100%;">
+                    <label for="file_video" class="upload-card"
+                        style="border-radius: 20px; border: none; box-shadow: none; height: 100%; min-height: 350px;">
+                        <div
+                            style="padding: 2.5rem; border-radius: 50%; margin-bottom: 2rem; color: var(--secondary); background: rgba(217, 70, 239, 0.1);">
+                            <i class='bx bx-video' style="font-size: 5rem;"></i>
+                        </div>
+                        <h3 style="margin-bottom: 0.5rem; color: var(--text-light);">Upload Video</h3>
+                        <p style="color: var(--text-gray);">Analyze road footage <br>(MP4, AVI)</p>
+                        <input type="file" name="file" id="file_video" accept="video/*" style="display: none;">
+                        <div class="btn btn-secondary" style="margin-top: 1.5rem;">Select Video</div>
+                    </label>
+                </form>
+            </div>
+
+            <!-- Live Detection -->
+            <div class="clay-card" style="text-align: center; transition: 0.3s;" id="btn-live-detect">
+                <div class="upload-card"
+                    style="border-radius: 20px; border: none; box-shadow: none; height: 100%; min-height: 350px; cursor: pointer;">
+                    <div
+                        style="padding: 2.5rem; border-radius: 50%; margin-bottom: 2rem; color: var(--success); background: rgba(34, 197, 94, 0.1);">
+                        <i class='bx bx-camera' style="font-size: 5rem;"></i>
+                    </div>
+                    <h3 style="margin-bottom: 0.5rem; color: var(--text-light);">Live Detection</h3>
+                    <p style="color: var(--text-gray);">Real-time analysis <br>(Camera)</p>
+                    <div class="btn btn-success" style="margin-top: 1.5rem;">Start Camera</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Live Interface -->
+        <div id="live-interface" style="display: none; max-width: 900px; margin: 2rem auto;">
+            <div class="clay-card">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                    <h4 style="display: flex; align-items: center; gap: 0.5rem; color: #16a34a;">
+                        <i class='bx bx-broadcast'></i> Live Feed
+                    </h4>
+                    <button id="btn-stop-camera" class="btn btn-white" style="color: #dc2626; padding: 0.5rem 1rem;">
+                        <i class='bx bx-stop-circle'></i> Stop Camera
+                    </button>
+                </div>
+
+                <div class="result-image-container" style="position: relative;">
+                    <video id="live-video" autoplay playsinline style="width: 100%; border-radius: 12px;"></video>
+                    <canvas id="overlay-canvas"
+                        style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;"></canvas>
+
+                <!-- Synthesized Audio Only -->
+                </div>
+
+                <div style="margin-top: 1rem; display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.05); padding: 1rem 1.5rem; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); width: 100%; box-sizing: border-box; height: 60px; overflow: hidden;">
+                    <button id="btn-test-sound" class="btn btn-white" style="flex: 0 0 auto; padding: 0.5rem 1rem; background: rgba(255,255,255,0.1); border: none; color: white; display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                        <i class='bx bx-volume-full'></i> Test Buzzer
+                    </button>
+                    <div style="flex: 1 1 auto; text-align: right; color: #e2e8f0; font-size: 0.9rem; min-width: 150px; line-height: 1;">
+                        <i id="connection-icon" class='bx bx-loader-alt bx-spin'></i>
+                        <span id="connection-text" style="margin-left: 0.25rem;">Connecting...</span>
+                    </div>
+                </div>
+
+                <!-- Stats Panel -->
+                <div id="live-stats-panel"
+                    style="margin-top: 2rem; display: flex; justify-content: space-around; align-items: center; background: rgba(255,255,255,0.05); padding: 1.5rem; border-radius: 15px; border: 1px solid rgba(255,255,255,0.1); height: 120px; box-sizing: border-box;">
+                    <div style="text-align: center;">
+                        <div id="live-total-count" style="font-size: 2.5rem; font-weight: 800; color: #fff;">0</div>
+                        <div
+                            style="font-size: 0.7rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.1em;">
+                            Total Potholes</div>
+                    </div>
+                    <div style="width: 1px; height: 40px; background: rgba(255,255,255,0.1);"></div>
+                    <div style="text-align: center;">
+                        <div id="live-current-count" style="font-size: 2.5rem; font-weight: 800; color: #22c55e;">0
+                        </div>
+                        <div
+                            style="font-size: 0.7rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.1em;">
+                            In View</div>
+                    </div>
+                    <div style="width: 1px; height: 40px; background: rgba(255,255,255,0.1);"></div>
+                    <div style="display: flex; gap: 1.5rem;">
+                        <div style="text-align: center;">
+                            <div id="live-small-count" style="font-size: 1.5rem; font-weight: 700; color: #16a34a;">0</div>
+                            <div style="font-size: 0.6rem; font-weight: 600; color: #64748b; margin-top: 0.2rem;">SMALL</div>
+                        </div>
+                        <div style="text-align: center;">
+                            <div id="live-medium-count" style="font-size: 1.5rem; font-weight: 700; color: #d97706;">0</div>
+                            <div style="font-size: 0.6rem; font-weight: 600; color: #64748b; margin-top: 0.2rem;">MEDIUM</div>
+                        </div>
+                        <div style="text-align: center;">
+                            <div id="live-large-count" style="font-size: 1.5rem; font-weight: 700; color: #dc2626;">0</div>
+                            <div style="font-size: 0.6rem; font-weight: 600; color: #64748b; margin-top: 0.2rem;">LARGE</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Submit Live Report Action -->
+                <div style="margin-top: 2rem; text-align: center;">
+                    <button type="button" class="btn btn-primary" id="btn-submit-live-report" style="padding: 1rem 3rem; font-size: 1.1rem; box-shadow: 0 10px 25px rgba(99, 102, 241, 0.4);">
+                        <i class='bx bx-paper-plane'></i> Submit Live Report
+                    </button>
+                    <p id="live-report-status" style="margin-top: 1rem; color: #94a3b8; font-size: 0.9rem;"></p>
+                </div>
+            </div>
+        </div>
+
+        {% else %}
+        <!-- Result Visualization -->
+        <div class="dashboard-grid">
+            <div class="clay-card">
+                <h4 style="margin-bottom: 1.5rem; display: flex; align-items: center; gap: 0.5rem;">
+                    <i class='bx bx-file-blank'></i> Original Input
+                </h4>
+                <div class="result-image-container">
+                    {% if video_mode %}
+                    <video controls style="width: 100%; border-radius: 12px; display: block;">
+                        <source src="{{ url_for('static', filename='uploads/' + uploaded_video) }}" type="video/webm">
+                        <source src="{{ url_for('static', filename='uploads/' + uploaded_video) }}" type="video/mp4">
+                        Your browser does not support the video tag.
+                    </video>
+                    {% else %}
+                    <img src="{{ url_for('static', filename='uploads/' + uploaded_image) }}" alt="Original">
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="clay-card">
+                <h4
+                    style="margin-bottom: 1.5rem; display: flex; align-items: center; gap: 0.5rem; color: var(--primary);">
+                    <i class='bx bx-radar'></i> AI Detection
+                </h4>
+                <div class="result-image-container">
+                    {% if video_mode %}
+                    <video controls autoplay loop muted style="width: 100%; border-radius: 12px;">
+                        <source src="{{ url_for('static', filename='predictions/' + result_video) }}" type="video/webm">
+                        Your browser does not support the video tag.
+                    </video>
+                    <div style="margin-top: 1.5rem; text-align: center;">
+                        <a href="{{ url_for('static', filename='predictions/' + result_video) }}" download="detection_result.webm" class="btn btn-white" style="display: inline-flex; align-items: center; gap: 0.5rem; text-decoration: none; border: 1px solid rgba(255,255,255,0.1);">
+                            <i class='bx bx-download' style="font-size: 1.2rem;"></i> Download Detection Video
+                        </a>
+                    </div>
+                    {% else %}
+                    <img src="{{ url_for('static', filename='predictions/' + result_image) }}" alt="Prediction">
+                    <div style="margin-top: 1.5rem; text-align: center;">
+                        <a href="{{ url_for('static', filename='predictions/' + result_image) }}" download="detection_result.jpg" class="btn btn-white" style="display: inline-flex; align-items: center; gap: 0.5rem; text-decoration: none; border: 1px solid rgba(255,255,255,0.1);">
+                            <i class='bx bx-download' style="font-size: 1.2rem;"></i> Download Detection Image
+                        </a>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        {% if stats %}
+        <div
+            style="background: var(--glass-bg); backdrop-filter: blur(12px); border: 1px solid var(--glass-border); border-radius: 30px; padding: 2rem 4rem; display: flex; justify-content: space-between; align-items: center; box-shadow: var(--glass-shadow); max-width: 1200px; margin: 8rem auto 0;">
+            <div style="text-align: center;">
+                <div style="font-size: 3.5rem; font-weight: 800; color: var(--text-light); line-height: 1;">{{
+                    stats.total }}</div>
+                <div
+                    style="font-size: 0.8rem; font-weight: 700; color: var(--text-dim); letter-spacing: 0.1em; margin-top: 0.5rem; text-transform: uppercase;">
+                    Potholes</div>
+            </div>
+            <div style="width: 1px; height: 60px; background: #e2e8f0;"></div>
+            <div style="text-align: center;">
+                <div style="font-size: 3.5rem; font-weight: 800; color: #2563eb; line-height: 1;">{{ stats.avg_conf }}
+                </div>
+                <div
+                    style="font-size: 0.8rem; font-weight: 700; color: #64748b; letter-spacing: 0.1em; margin-top: 0.5rem; text-transform: uppercase;">
+                    Accuracy</div>
+            </div>
+            <div style="width: 1px; height: 60px; background: #e2e8f0;"></div>
+            <div style="display: flex; gap: 3rem;">
+                <div style="text-align: center;">
+                    <div style="font-size: 1.8rem; font-weight: 700; color: #16a34a;">{{ stats.small }}</div>
+                    <div style="font-size: 0.8rem; font-weight: 600; color: #64748b; margin-top: 0.2rem;">SMALL</div>
+                </div>
+                <div style="text-align: center;">
+                    <div style="font-size: 1.8rem; font-weight: 700; color: #d97706;">{{ stats.medium }}</div>
+                    <div style="font-size: 0.8rem; font-weight: 600; color: #64748b; margin-top: 0.2rem;">MEDIUM</div>
+                </div>
+                <div style="text-align: center;">
+                    <div style="font-size: 1.8rem; font-weight: 700; color: #dc2626;">{{ stats.large }}</div>
+                    <div style="font-size: 0.8rem; font-weight: 600; color: #64748b; margin-top: 0.2rem;">LARGE</div>
+                </div>
+            </div>
+            <div style="width: 1px; height: 60px; background: #e2e8f0;"></div>
+            <div style="text-align: center;">
+                {% if stats.urgency == 'High' %}
+                <div
+                    style="background: rgba(239, 68, 68, 0.2); color: #ef4444; padding: 0.5rem 1.5rem; border-radius: 50px; font-weight: 700; font-size: 1.1rem; display: inline-block;">
+                    High Priority</div>
+                {% elif stats.urgency == 'Medium' %}
+                <div
+                    style="background: rgba(234, 179, 8, 0.2); color: #eab308; padding: 0.5rem 1.5rem; border-radius: 50px; font-weight: 700; font-size: 1.1rem; display: inline-block;">
+                    Medium Priority</div>
+                {% elif stats.urgency == 'None' %}
+                <div
+                    style="background: rgba(34, 197, 94, 0.2); color: #22c55e; padding: 0.5rem 1.5rem; border-radius: 50px; font-weight: 700; font-size: 1.1rem; display: inline-block;">
+                    No Repair Needed</div>
+                {% else %}
+                <div
+                    style="background: rgba(34, 197, 94, 0.2); color: #22c55e; padding: 0.5rem 1.5rem; border-radius: 50px; font-weight: 700; font-size: 1.1rem; display: inline-block;">
+                    Low Priority</div>
+                {% endif %}
+                <div style="margin-top: 0.5rem; font-size: 0.8rem; color: #94a3b8;">Repair Urgency</div>
+            </div>
+        </div>
+
+        <!-- GPS Location Section -->
+        <div class="clay-card" style="margin-top: 2rem; max-width: 1200px; margin-left: auto; margin-right: auto;">
+            <h4 style="margin-bottom: 1.5rem; display: flex; align-items: center; gap: 0.5rem;">
+                <i class='bx bx-map-pin'></i> Location Data
+            </h4>
+            
+            <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+                <div style="flex: 1; min-width: 300px;">
+                    <label style="display: block; margin-bottom: 0.5rem; color: var(--text-light); font-weight: 500;">Latitude</label>
+                    <input type="text" id="gps-lat" placeholder="e.g., 13.2878" style="width: 100%; padding: 0.8rem; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.2); color: white; outline: none;">
+                </div>
+                <div style="flex: 1; min-width: 300px;">
+                    <label style="display: block; margin-bottom: 0.5rem; color: var(--text-light); font-weight: 500;">Longitude</label>
+                    <input type="text" id="gps-lng" placeholder="e.g., 77.5965" style="width: 100%; padding: 0.8rem; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.2); color: white; outline: none;">
+                </div>
+            </div>
+            
+            <div style="margin-top: 1.5rem;">
+                <label style="display: block; margin-bottom: 0.5rem; color: var(--text-light); font-weight: 500;">Address</label>
+                <textarea id="gps-address" placeholder="Address will appear here..." readonly style="width: 100%; padding: 0.8rem; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.1); color: var(--text-gray); outline: none; min-height: 80px; resize: vertical; pointer-events: none;"></textarea>
+            </div>
+            
+            <div style="margin-top: 1.5rem; display: flex; gap: 1rem; align-items: center;">
+                <button type="button" class="btn btn-white" id="btn-fetch-gps" style="display: flex; align-items: center; gap: 0.5rem;">
+                    <i class='bx bx-current-location'></i> Auto-Fetch
+                </button>
+                <span id="gps-status" style="font-size: 0.9rem; color: var(--text-gray);"></span>
+            </div>
+        </div>
+
+        <!-- Submit Report Action -->
+        <div style="text-align: center; margin-top: 2rem;">
+            <button type="button" class="btn btn-primary" id="btn-submit-report" style="padding: 1rem 3rem; font-size: 1.1rem; box-shadow: 0 10px 25px rgba(99, 102, 241, 0.4);">
+                <i class='bx bx-paper-plane'></i> Submit Report
+            </button>
+        </div>
+
+        <script>
+            document.addEventListener("DOMContentLoaded", function () {
+                const configElement = document.getElementById('detection-config'); // FIX: Define at top of scope
+                const btnFetchGps = document.getElementById('btn-fetch-gps');
+                const btnSubmitReport = document.getElementById('btn-submit-report');
+                const gpsLatInput = document.getElementById('gps-lat');
+                const gpsLngInput = document.getElementById('gps-lng');
+                const gpsStatus = document.getElementById('gps-status');
+
+                let geocodeTimeout;
+                async function reverseGeocode() {
+                    const lat = gpsLatInput.value;
+                    const lng = gpsLngInput.value;
+                    const gpsAddressInput = document.getElementById('gps-address');
+
+                    if (!lat || !lng) {
+                        gpsAddressInput.value = "";
+                        return;
+                    }
+
+                    gpsStatus.innerText = "Generating address...";
+                    gpsStatus.style.color = "var(--text-gray)";
+
+                    try {
+                        const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`);
+                        const data = await response.json();
+                        if (data && data.display_name) {
+                            gpsAddressInput.value = data.display_name;
+                            gpsStatus.innerText = "Address generated successfully.";
+                            gpsStatus.style.color = "#22c55e";
+                        } else {
+                            gpsAddressInput.value = "Address not found";
+                            gpsStatus.innerText = "Address search failed.";
+                            gpsStatus.style.color = "#ef4444";
+                        }
+                    } catch (err) {
+                        console.error("Geocoding error:", err);
+                        gpsAddressInput.value = "Error fetching address";
+                        gpsStatus.innerText = "Geocoding service error.";
+                        gpsStatus.style.color = "#ef4444";
+                    }
+                }
+
+                const debouncedGeocode = () => {
+                    clearTimeout(geocodeTimeout);
+                    geocodeTimeout = setTimeout(reverseGeocode, 1000);
+                };
+
+                gpsLatInput.addEventListener('input', debouncedGeocode);
+                gpsLngInput.addEventListener('input', debouncedGeocode);
+
+                if (btnFetchGps) {
+                    btnFetchGps.addEventListener('click', function() {
+                        if ("geolocation" in navigator) {
+                            gpsStatus.innerText = "Fetching coordinates...";
+                            navigator.geolocation.getCurrentPosition(
+                                function(position) {
+                                    gpsLatInput.value = position.coords.latitude;
+                                    gpsLngInput.value = position.coords.longitude;
+                                    gpsStatus.innerText = "Coordinates fetched. Generating address...";
+                                    gpsStatus.style.color = "#22c55e";
+                                    reverseGeocode();
+                                },
+                                function(error) {
+                                    gpsStatus.innerText = "Error fetching location: " + error.message;
+                                    gpsStatus.style.color = "#ef4444";
+                                },
+                                { enableHighAccuracy: true, timeout: 5000 }
+                            );
+                        } else {
+                            gpsStatus.innerText = "Geolocation is not supported by your browser.";
+                            gpsStatus.style.color = "#ef4444";
+                        }
+                    });
+                }
+                
+                if (btnSubmitReport) {
+                    btnSubmitReport.addEventListener('click', function() {
+                        const lat = gpsLatInput.value;
+                        const lng = gpsLngInput.value;
+                        const address = document.getElementById('gps-address').value || "Unknown Location";
+                        
+                        // Grab stats safely via data attributes
+                        const totalPotholes = parseInt(configElement.dataset.totalPotholes) || 0;
+                        const urgency = configElement.dataset.urgency || "None";
+                        const videoMode = configElement.dataset.videoMode === 'true';
+                        const small = parseInt(configElement.dataset.small) || 0;
+                        const medium = parseInt(configElement.dataset.medium) || 0;
+                        const large = parseInt(configElement.dataset.large) || 0;
+                        const resultFile = configElement.dataset.resultFile || "";
+
+                        if (!lat || !lng) {
+                            alert("Please fetch or enter GPS coordinates first.");
+                            return;
+                        }
+                        
+                        btnSubmitReport.innerHTML = "<i class='bx bx-loader-alt bx-spin'></i> Submitting...";
+                        btnSubmitReport.disabled = true;
+
+                        // Save report securely via backend
+                        fetch('/submit_report', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                lat: parseFloat(lat),
+                                lng: parseFloat(lng),
+                                address: address,
+                                total_potholes: totalPotholes,
+                                urgency: urgency,
+                                small: small,
+                                medium: medium,
+                                large: large,
+                                result_file: resultFile,
+                                detection_type: videoMode ? 'Video' : 'Image'
+                            })
+                        })
+                        .then(res => res.json())
+                        .then(data => {
+                            if (data.status === 'success') {
+                                // Prepare Professional Email content
+                                const accuracy = configElement.dataset.accuracy || "0.00";
+                                const timestamp = new Date().toLocaleString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                                const evidenceLink = `${window.location.origin}/static/predictions/${resultFile}`;
+
+                                const toEmail = "road.maintenance@municipal.gov";
+                                const subject = encodeURIComponent("Road Infrastructure Alert – Pothole Detection Report");
+                                const bodyText = `Dear Sir/Madam,\n\nThis is to inform you that our automated pothole detection system has identified road surface damage at the following location.\n\nDetection Summary:\n• Total Potholes Detected: ${totalPotholes}\n• Small Potholes: ${small}\n• Medium Potholes: ${medium}\n• Large Potholes: ${large}\n\nLocation Details:\n• Address: ${address}\n• Latitude: ${lat}\n• Longitude: ${lng}\n\nSystem Analysis:\n• Detection Accuracy: ${accuracy}\n• Repair Priority Level: ${urgency}\n\nDetection Timestamp:\n• ${timestamp}\n\nVisual Evidence:\nImage showing detected potholes captured during the detection process.\n\nVisual Evidence Link:\n${evidenceLink}\n\nWe kindly request the concerned authorities to review the reported location and take the necessary road maintenance actions at the earliest.\n\nThank you.\n\nSincerely,\nRoadSafe Automated Monitoring System`;
+                                const body = encodeURIComponent(bodyText);
+                                
+                                const gmailLink = `https://mail.google.com/mail/?view=cm&fs=1&to=${toEmail}&su=${subject}&body=${body}`;
+                                window.open(gmailLink, '_blank');
+                                
+                                btnSubmitReport.innerHTML = "<i class='bx bx-check'></i> Submitted";
+                            } else {
+                                alert("Error saving report: " + (data.error || "Unknown error"));
+                                btnSubmitReport.innerHTML = "<i class='bx bx-paper-plane'></i> Submit Report";
+                                btnSubmitReport.disabled = false;
+                            }
+                        })
+                        .catch(err => {
+                            console.error(err);
+                            alert("Failed to submit the report.");
+                            btnSubmitReport.innerHTML = "<i class='bx bx-paper-plane'></i> Submit Report";
+                            btnSubmitReport.disabled = false;
+                        });
+                    });
+                }
+            });
+        </script>
+        {% endif %}
+
+        <div style="text-align: center; margin-top: 3rem;">
+            <a href="{{ url_for('detect') }}" class="btn btn-white" style="padding: 1rem 3rem;">
+                <i class='bx bx-refresh'></i> Analyze Another Media
+            </a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        // --- Configuration Extraction ---
+        const configElement = document.getElementById('detection-config');
+        const liveMode = configElement.dataset.liveMode === 'true';
+        const detectUrl = configElement.dataset.detectUrl;
+
+        // --- Elements ---
+        const fileInputVideo = document.getElementById('file_video');
+        const overlay = document.getElementById('loading-overlay');
+        const uploadCards = document.querySelectorAll('.upload-card');
+        const btnLiveDetect = document.getElementById('btn-live-detect');
+        const liveInterface = document.getElementById('live-interface');
+        const videoElement = document.getElementById('live-video');
+        const canvasElement = document.getElementById('overlay-canvas');
+        const btnStopCamera = document.getElementById('btn-stop-camera');
+        const btnTestSound = document.getElementById('btn-test-sound');
+
+        // --- State ---
+        let stream = null;
+        let isDetecting = false;
+        let isProcessingFrame = false; // Hugging Face Throttle
+        let activeTracks = [];
+        let cumulativePotholes = new Map(); // id -> maxSeverityScore
+        let nextPotholeId = 1;
+        let lastBuzzerTime = 0; // Cooldown for sound
+        const DIST_THRESHOLD = 250; // Increased to catch larger movements between frames
+        const MAX_MISSED_FRAMES = 15; // Give more time before dropping a track
+        const tempCanvas = document.createElement('canvas');
+        const tempCtx = tempCanvas.getContext('2d');
+        
+        // --- Audio Context Setup ---
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        function playBeep() {
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+            
+            // First Tone (Bing) - Higher Pitch
+            const osc1 = audioCtx.createOscillator();
+            const gain1 = audioCtx.createGain();
+            osc1.type = 'sine';
+            osc1.frequency.setValueAtTime(659.25, audioCtx.currentTime); // E5
+            gain1.gain.setValueAtTime(0, audioCtx.currentTime);
+            gain1.gain.linearRampToValueAtTime(0.5, audioCtx.currentTime + 0.05);
+            gain1.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+            osc1.connect(gain1);
+            gain1.connect(audioCtx.destination);
+            osc1.start(audioCtx.currentTime);
+            osc1.stop(audioCtx.currentTime + 0.5);
+
+            // Second Tone (Bong) - Lower Pitch
+            const osc2 = audioCtx.createOscillator();
+            const gain2 = audioCtx.createGain();
+            osc2.type = 'sine';
+            osc2.frequency.setValueAtTime(523.25, audioCtx.currentTime + 0.5); // C5
+            gain2.gain.setValueAtTime(0, audioCtx.currentTime + 0.5);
+            gain2.gain.linearRampToValueAtTime(0.5, audioCtx.currentTime + 0.55);
+            gain2.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 1.2);
+            osc2.connect(gain2);
+            gain2.connect(audioCtx.destination);
+            osc2.start(audioCtx.currentTime + 0.5);
+            osc2.stop(audioCtx.currentTime + 1.2);
+            
+            console.log("Airplane Chime Played");
+        }
+
+        // --- Shared Helpers ---
+        function getCentroid(bbox) {
+            return { x: (bbox[0] + bbox[2]) / 2, y: (bbox[1] + bbox[3]) / 2 };
+        }
+        function getDistance(p1, p2) {
+            return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
+        }
+        function getIoU(box1, box2) {
+            const xA = Math.max(box1[0], box2[0]);
+            const yA = Math.max(box1[1], box2[1]);
+            const xB = Math.min(box1[2], box2[2]);
+            const yB = Math.min(box1[3], box2[3]);
+            
+            const interArea = Math.max(0, xB - xA) * Math.max(0, yB - yA);
+            const box1Area = (box1[2] - box1[0]) * (box1[3] - box1[1]);
+            const box2Area = (box2[2] - box2[0]) * (box2[3] - box2[1]);
+            
+            return interArea / (box1Area + box2Area - interArea);
+        }
+
+        // --- Loading Overlay Logic ---
+        const fileInputImage = document.getElementById('file_image');
+        const loadingText = overlay.querySelector('.loading-text');
+        const loadingSubtext = overlay.querySelector('.loading-subtext');
+
+        function showLoading(type) {
+            if (type === 'image') {
+                loadingText.innerText = "Processing Image";
+                loadingSubtext.innerText = "Image is in the process and take time depending on the image size...";
+            } else {
+                loadingText.innerText = "Processing Footage";
+                loadingSubtext.innerText = "This may take a moment based on video size...";
+            }
+            overlay.classList.add('active');
+        }
+
+        if (fileInputImage) {
+            fileInputImage.addEventListener('change', function () {
+                if (this.files.length > 0) {
+                    showLoading('image');
+                    this.form.submit();
+                }
+            });
+        }
+
+        if (fileInputVideo) {
+            fileInputVideo.addEventListener('change', function () {
+                if (this.files.length > 0) {
+                    showLoading('video');
+                    this.form.submit();
+                }
+            });
+        }
+
+        // --- Drag and Drop ---
+        uploadCards.forEach(card => {
+            const input = card.querySelector('input[type="file"]');
+            const form = card.closest('form');
+            if (!input || !form) return;
+
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eName => {
+                card.addEventListener(eName, e => { e.preventDefault(); e.stopPropagation(); });
+            });
+            card.addEventListener('dragenter', () => card.classList.add('drag-over'));
+            card.addEventListener('dragover', () => card.classList.add('drag-over'));
+            card.addEventListener('dragleave', () => card.classList.remove('drag-over'));
+            card.addEventListener('drop', e => {
+                card.classList.remove('drag-over');
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    input.files = files;
+                    if (input.id === 'file_image') showLoading('image');
+                    else if (input.id === 'file_video') showLoading('video');
+                    form.submit();
+                }
+            });
+        });
+
+        // --- Geolocation Helpers ---
+        let currentLat = null;
+        let currentLng = null;
+        let locationWatchId = null;
+
+        function startLocationTracking() {
+            if ("geolocation" in navigator) {
+                locationWatchId = navigator.geolocation.watchPosition(
+                    position => {
+                        currentLat = position.coords.latitude;
+                        currentLng = position.coords.longitude;
+                        console.log("Location updated:", currentLat, currentLng);
+                    },
+                    error => {
+                        console.warn("Location error:", error.message);
+                    },
+                    { enableHighAccuracy: true, maximumAge: 10000, timeout: 5000 }
+                );
+            } else {
+                console.warn("Geolocation is not supported by this browser.");
+            }
+        }
+
+        function stopLocationTracking() {
+            if (locationWatchId !== null && "geolocation" in navigator) {
+                navigator.geolocation.clearWatch(locationWatchId);
+                locationWatchId = null;
+            }
+        }
+
+        // --- Live Camera Logic ---
+        function stopCamera() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+            }
+            stopLocationTracking(); // Stop GPS when camera stops
+            
+            isDetecting = false;
+            liveInterface.style.display = 'none';
+            const grid = document.querySelector('.dashboard-grid');
+            if (grid) grid.style.display = 'grid';
+            const title = document.querySelector('h3');
+            if (title) title.style.display = 'block';
+            activeTracks = [];
+            cumulativePotholes.clear();
+            nextPotholeId = 1;
+            const ctx = canvasElement.getContext('2d');
+            ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+        }
+
+        async function processFrame() {
+            if (!stream || videoElement.paused || videoElement.ended || !isDetecting || isProcessingFrame) {
+                if (!isDetecting) isDetecting = false;
+                return;
+            }
+
+            isProcessingFrame = true; // Block next frame until this one is done
+            const ctx = canvasElement.getContext('2d');
+            const MAX_WIDTH = 320;
+            const scale = Math.min(1, MAX_WIDTH / videoElement.videoWidth);
+            const width = videoElement.videoWidth * scale;
+            const height = videoElement.videoHeight * scale;
+
+            if (tempCanvas.width !== width) {
+                tempCanvas.width = width;
+                tempCanvas.height = height;
+            }
+            tempCtx.drawImage(videoElement, 0, 0, width, height);
+
+            // Extreme Optimization: 0.3 quality for remote latency
+            const imageData = tempCanvas.toDataURL('image/jpeg', 0.3);
+
+            try {
+                const startTime = performance.now();
+                const response = await fetch(detectUrl, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ image: imageData })
+                });
+                const data = await response.json();
+
+                ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+
+                if (data.detections) {
+                    document.getElementById('live-current-count').innerText = data.detections.length;
+
+                    // Reset matched flags
+                    activeTracks.forEach(track => track.matchedThisFrame = false);
+
+                    data.detections.forEach(det => {
+                        const curC = getCentroid(det.bbox);
+                        const curSevScore = det.severity === "Large" ? 2 : (det.severity === "Medium" ? 1 : 0);
+
+                        let bestMatchIdx = -1;
+                        let bestDist = DIST_THRESHOLD;
+
+                        // Find closest existing track
+                        for (let i = 0; i < activeTracks.length; i++) {
+                            const track = activeTracks[i];
+                            if (track.matchedThisFrame) continue;
+                            
+                            const distance = getDistance(curC, getCentroid(track.bbox));
+                            const iou = getIoU(det.bbox, track.bbox);
+                            
+                            // Match if distance is close OR there is significant overlap (IoU)
+                            if (distance < DIST_THRESHOLD || iou > 0.3) {
+                                if (distance < bestDist) {
+                                    bestDist = distance;
+                                    bestMatchIdx = i;
+                                }
+                            }
+                        }
+
+                        if (bestMatchIdx !== -1) {
+                            // Assign detection to existing track
+                            const track = activeTracks[bestMatchIdx];
+                            det.id = track.id;
+                            track.bbox = det.bbox;
+                            track.missedFrames = 0;
+                            track.matchedThisFrame = true;
+                            
+                            // Update max severity
+                            if (cumulativePotholes.has(det.id)) {
+                                if (curSevScore > cumulativePotholes.get(det.id)) {
+                                    cumulativePotholes.set(det.id, curSevScore);
+                                }
+                            }
+                        } else {
+                            // Create new track
+                            det.id = nextPotholeId++;
+                            activeTracks.push({
+                                id: det.id,
+                                bbox: det.bbox,
+                                missedFrames: 0,
+                                matchedThisFrame: true
+                            });
+                            cumulativePotholes.set(det.id, curSevScore);
+                            
+                            // NEW POTHOLE DETECTED! Save its location if we have GPS
+                            if (currentLat && currentLng) {
+                                fetch('/save_pothole', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                        lat: currentLat,
+                                        lng: currentLng,
+                                        severity: det.severity // Log initial severity at time of discovery
+                                    })
+                                }).catch(e => console.error("Error saving location:", e));
+                            }
+                        }
+
+                        // Trigger Buzzer for Large Potholes
+                        if (det.severity === "Large") {
+                            const now = Date.now();
+                            if (now - lastBuzzerTime > 1000) { // 1 second cooldown
+                                console.log("LARGE POTHOLE DETECTED! Triggering buzzer...");
+                                playBeep();
+                                lastBuzzerTime = now;
+                            }
+                        }
+
+                        const [x1, y1, x2, y2] = det.bbox.map(coord => coord / scale);
+                        ctx.strokeStyle = det.color;
+                        ctx.lineWidth = 3;
+                        ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+                        ctx.fillStyle = det.color;
+                        ctx.font = "bold 18px sans-serif";
+                        ctx.fillText(det.severity, x1, y1 - 10);
+                    });
+                    
+                    // Remove tracks that haven't been seen for too long
+                    activeTracks = activeTracks.filter(track => {
+                        if (!track.matchedThisFrame) {
+                            track.missedFrames++;
+                        }
+                        return track.missedFrames < MAX_MISSED_FRAMES;
+                    });
+
+                    // Calculate Cumulative Stats
+                    let cumulativeSmall = 0, cumulativeMedium = 0, cumulativeLarge = 0;
+                    for (let score of cumulativePotholes.values()) {
+                        if (score === 2) cumulativeLarge++;
+                        else if (score === 1) cumulativeMedium++;
+                        else cumulativeSmall++;
+                    }
+
+                    // Update UI with CUMULATIVE stats (total potholes seen so far)
+                    document.getElementById('live-total-count').innerText = cumulativePotholes.size;
+                    
+                    // Show current in-view (already updated earlier but we can ensure consistency)
+                    document.getElementById('live-current-count').innerText = data.detections.length;
+
+                    // Show cumulative breakdown
+                    document.getElementById('live-small-count').innerText = cumulativeSmall;
+                    document.getElementById('live-medium-count').innerText = cumulativeMedium;
+                    document.getElementById('live-large-count').innerText = cumulativeLarge;
+                    
+                    ctx.fillStyle = "#ffffff";
+                    ctx.font = "bold 20px sans-serif";
+                    ctx.fillText(`Total: ${cumulativePotholes.size}`, 10, 30);
+                    const latency = Math.round(performance.now() - startTime);
+                    ctx.font = "12px sans-serif";
+                    ctx.fillText(`Latency: ${latency}ms | FPS: ${Math.round(1000 / latency)}`, 10, 55);
+
+                    const connIcon = document.getElementById('connection-icon');
+                    const connText = document.getElementById('connection-text');
+                    if (connIcon && connText) {
+                        connIcon.className = 'bx bx-check-circle'; // No spin
+                        connIcon.style.color = '#22c55e';
+                        
+                        // Pad latency to 3 digits to minimize layout jumping
+                        const latStr = String(latency).padStart(3, '0');
+                        connText.innerText = `Connected (${latStr}ms)`;
+                    }
+                }
+            } catch (err) {
+                console.error("Frame processing error:", err);
+            } finally {
+                isProcessingFrame = false; // Release lock
+            }
+
+            if (isDetecting) requestAnimationFrame(processFrame);
+        }
+
+        async function startCamera() {
+            try {
+                // Request location access along with camera
+                startLocationTracking();
+                
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: "environment", width: { ideal: 640 }, height: { ideal: 480 } }
+                });
+                videoElement.srcObject = stream;
+                videoElement.onloadedmetadata = () => {
+                    canvasElement.width = videoElement.videoWidth;
+                    canvasElement.height = videoElement.videoHeight;
+                    isDetecting = true;
+                    processFrame();
+                };
+            } catch (err) {
+                console.error("Camera access error:", err);
+                alert("Could not access camera.");
+                stopCamera();
+            }
+        }
+
+        if (btnLiveDetect) {
+            btnLiveDetect.addEventListener('click', () => {
+                const grid = document.querySelector('.dashboard-grid');
+                if (grid) grid.style.display = 'none';
+                const title = document.querySelector('h3');
+                if (title) title.style.display = 'none';
+                liveInterface.style.display = 'block';
+                startCamera();
+            });
+        }
+
+        if (btnStopCamera) {
+            btnStopCamera.addEventListener('click', stopCamera);
+        }
+
+        if (btnTestSound) {
+            btnTestSound.addEventListener('click', () => {
+                playBeep();
+            });
+        }
+
+        // Handle auto-start if in live route
+        if (liveMode && liveInterface) {
+            const grid = document.querySelector('.dashboard-grid');
+            if (grid) grid.style.display = 'none';
+            const title = document.querySelector('h3');
+            if (title) title.style.display = 'none';
+            liveInterface.style.display = 'block';
+            const startBtn = document.createElement('button');
+            startBtn.className = 'btn btn-primary';
+            startBtn.innerHTML = "<i class='bx bx-camera'></i> Start Live Camera";
+            startBtn.style.cssText = "position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); padding: 1.5rem 3rem; font-size: 1.5rem; z-index: 100;";
+            startBtn.onclick = () => { startBtn.remove(); startCamera(); };
+            document.body.appendChild(startBtn);
+        }
+
+        // Live Report Submission Logic
+        const btnSubmitLiveReport = document.getElementById('btn-submit-live-report');
+        const liveReportStatus = document.getElementById('live-report-status');
+
+        if (btnSubmitLiveReport) {
+            btnSubmitLiveReport.addEventListener('click', async function() {
+                if (!currentLat || !currentLng) {
+                    alert("Waiting for GPS location... Please ensure location permissions are granted.");
+                    return;
+                }
+
+                const total = parseInt(document.getElementById('live-total-count').innerText) || 0;
+                const small = parseInt(document.getElementById('live-small-count').innerText) || 0;
+                const medium = parseInt(document.getElementById('live-medium-count').innerText) || 0;
+                const large = parseInt(document.getElementById('live-large-count').innerText) || 0;
+
+                let urgency = "Low";
+                if (large > 0) urgency = "High";
+                else if (medium > 0) urgency = "Medium";
+                else if (total === 0) urgency = "None";
+
+                btnSubmitLiveReport.innerHTML = "<i class='bx bx-loader-alt bx-spin'></i> Submitting...";
+                btnSubmitLiveReport.disabled = true;
+
+                let address = "Live Location";
+                try {
+                    const geoRes = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${currentLat}&lon=${currentLng}&zoom=18&addressdetails=1`);
+                    const geoData = await geoRes.json();
+                    if (geoData && geoData.display_name) address = geoData.display_name;
+                } catch (e) { console.error("Live geocoding error:", e); }
+
+                try {
+                    const response = await fetch('/submit_report', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            lat: currentLat,
+                            lng: currentLng,
+                            total_potholes: total,
+                            small: small,
+                            medium: medium,
+                            large: large,
+                            urgency: urgency,
+                            detection_type: 'Live',
+                            address: address
+                        })
+                    });
+                    const data = await response.json();
+                    if (data.status === 'success') {
+                        // Prepare Professional Email content for Live Report
+                        const accuracy = "N/A (Live)";
+                        const timestamp = new Date().toLocaleString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                        // For live, we don't have a specific saved result image link, but we can point to the static evidence
+                        const evidenceLink = `${window.location.origin}/static/predictions/detection_result_image.png`;
+
+                        const toEmail = "road.maintenance@municipal.gov";
+                        const subject = encodeURIComponent("Road Infrastructure Alert – Pothole Detection Report");
+                        const bodyText = `Dear Sir/Madam,\n\nThis is to inform you that our automated pothole detection system has identified road surface damage at the following location.\n\nDetection Summary:\n• Total Potholes Detected: ${total}\n• Small Potholes: ${small}\n• Medium Potholes: ${medium}\n• Large Potholes: ${large}\n\nLocation Details:\n• Address: ${address}\n• Latitude: ${currentLat}\n• Longitude: ${currentLng}\n\nSystem Analysis:\n• Detection Accuracy: ${accuracy}\n• Repair Priority Level: ${urgency}\n\nDetection Timestamp:\n• ${timestamp}\n\nVisual Evidence:\nImage showing detected potholes captured during the detection process.\n\nVisual Evidence Link:\n${evidenceLink}\n\nWe kindly request the concerned authorities to review the reported location and take the necessary road maintenance actions at the earliest.\n\nThank you.\n\nSincerely,\nRoadSafe Automated Monitoring System`;
+                        const body = encodeURIComponent(bodyText);
+                        
+                        const gmailLink = `https://mail.google.com/mail/?view=cm&fs=1&to=${toEmail}&su=${subject}&body=${body}`;
+                        window.open(gmailLink, '_blank');
+
+                        btnSubmitLiveReport.innerHTML = "<i class='bx bx-check'></i> Report Submitted";
+                        liveReportStatus.innerText = "Location pinned and email draft opened!";
+                        liveReportStatus.style.color = "#22c55e";
+                        setTimeout(() => {
+                            btnSubmitLiveReport.innerHTML = "<i class='bx bx-paper-plane'></i> Submit Live Report";
+                            btnSubmitLiveReport.disabled = false;
+                        }, 3000);
+                    } else {
+                        throw new Error(data.error || "Unknown error");
+                    }
+                } catch (err) {
+                    console.error(err);
+                    alert("Failed to submit live report: " + err.message);
+                    btnSubmitLiveReport.innerHTML = "<i class='bx bx-paper-plane'></i> Submit Live Report";
+                    btnSubmitLiveReport.disabled = false;
+                }
+            });
+        }
+    });
+</script>
+{% endblock %}

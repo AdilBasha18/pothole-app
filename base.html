@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pothole Detection AI</title>
+
+    <!-- PWA Settings -->
+    <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+    <meta name="theme-color" content="#2563eb">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="RoadSafe">
+
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=2">
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Outfit:wght@600;800&display=swap"
+        rel="stylesheet">
+    <link href='https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css' rel='stylesheet'>
+</head>
+
+<body>
+
+    <nav class="navbar">
+        <div class="container nav-container">
+            <a href="{{ url_for('index') }}" class="logo">
+                <i class='bx bxs-traffic-cone' style="color: var(--primary);"></i> RoadSafe
+            </a>
+            <ul class="nav-links">
+                <!-- Three specific columns requested -->
+                <li><a href="{{ url_for('index') }}">Home</a></li>
+                <li><a href="{{ url_for('features') }}">Features</a></li>
+                <li><a href="{{ url_for('about') }}">About Us</a></li>
+
+                <!-- Auth Logic on the side -->
+                {% if session.get('user_id') or session.get('admin_id') %}
+                <li><a href="{{ url_for('live_road_map') }}">Live Road Map</a></li>
+                {% if session.get('user_id') %}
+                <li><a href="{{ url_for('detect') }}">Detect</a></li>
+                <li><a href="{{ url_for('dashboard') }}" class="btn btn-primary"
+                        style="padding: 0.6rem 1.2rem;">My Profile</a></li>
+                {% else %}
+                <li><a href="{{ url_for('admin_dashboard') }}" class="btn btn-primary"
+                        style="padding: 0.6rem 1.2rem;">Admin Panel</a></li>
+                {% endif %}
+                
+                <li style="display: flex; align-items: center; gap: 1rem;">
+                    <button id="theme-toggle" class="btn btn-white" style="padding: 0.5rem; border-radius: 50%; width: 40px; height: 40px; justify-content: center;">
+                        <i class='bx bx-moon' id="theme-icon"></i>
+                    </button>
+                    <a href="{{ url_for('logout') }}" style="font-size: 0.9rem;">Sign Out</a>
+                </li>
+                {% else %}
+                <li><button id="theme-toggle" class="btn btn-white" style="padding: 0.5rem; border-radius: 50%; width: 40px; height: 40px; justify-content: center; margin-right: 1rem;">
+                    <i class='bx bx-moon' id="theme-icon"></i>
+                </button></li>
+                <li><a href="{{ url_for('login') }}">Login</a></li>
+                <li><a href="{{ url_for('signup') }}" class="btn btn-primary" style="padding: 0.6rem 1.2rem;">Sign
+                        Up</a></li>
+                {% endif %}
+            </ul>
+        </div>
+    </nav>
+
+    <div class="flashes">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+        {% for category, message in messages %}
+        <div class="alert">
+            <i class='bx bx-info-circle' style="font-size: 1.5rem; color: #2563eb;"></i>
+            <span>{{ message }}</span>
+        </div>
+        {% endfor %}
+        {% endif %}
+        {% endwith %}
+    </div>
+
+    {% block content %}{% endblock %}
+
+    <script>
+        // Theme Toggle Logic
+        const themeToggle = document.getElementById('theme-toggle');
+        const themeIcon = document.getElementById('theme-icon');
+        const htmlElement = document.documentElement;
+
+        // Check for saved theme
+        const savedTheme = localStorage.getItem('theme') || 'dark';
+        setTheme(savedTheme);
+
+        themeToggle.addEventListener('click', () => {
+            const currentTheme = htmlElement.getAttribute('data-theme');
+            const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+            setTheme(newTheme);
+        });
+
+        function setTheme(theme) {
+            htmlElement.setAttribute('data-theme', theme);
+            localStorage.setItem('theme', theme);
+            
+            if (theme === 'light') {
+                themeIcon.classList.replace('bx-moon', 'bx-sun');
+                htmlElement.classList.add('light-theme');
+            } else {
+                themeIcon.classList.replace('bx-sun', 'bx-moon');
+                htmlElement.classList.remove('light-theme');
+            }
+        }
+    </script>
+
+</body>
+
+</html>
